@@ -236,9 +236,9 @@ def parse_pdf(file):
         method = "PDF metni" if len(direct) >= 40 else "OCR"
         text = direct if method == "PDF metni" else ocr_page(page)
 
-     dates = dates_in(text)
-    column_dates = ocr_dates_column(page)
-    dates = list(dict.fromkeys(dates + column_dates))
+        dates = dates_in(text)
+        column_dates = ocr_dates_column(page)
+        dates = list(dict.fromkeys(dates + column_dates))
         name = ""
         sicil = ""
 
