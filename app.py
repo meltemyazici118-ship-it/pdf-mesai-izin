@@ -36,17 +36,32 @@ DATE_RE = re.compile(
     r"(?<!\d)(\d{1,2})\s*[./-]\s*(\d{1,2})\s*[./-]\s*(20\d{2})(?!\d)"
 )
 
+
 def dates_in(text):
     found = []
-    for d, m, y in DATE_RE.findall(text):
-        try:
-            date = datetime(int(y), int(m), int(d))
-            value = date.strftime("%d.%m.%Y")
-            if value not in found:
-                found.append(value)
-        except ValueError:
-            pass
+    patterns = [
+        r"(?<!\d)(\d{1,2})\s*[./-]\s*(\d{1,2})\s*[./-]\s*(20\d{2})(?!\d)",
+        r"(?<!\d)(\d{1,2})\s*[./-]\s*(\d{1,2})\s*[./-]\s*(\d{2})(?!\d)"
+    ]
+
+    for pattern in patterns:
+        for d, m, y in re.findall(pattern, text):
+            try:
+                year = int(y)
+                if year < 100:
+                    year += 2000
+
+                date = datetime(year, int(m), int(d))
+                value = date.strftime("%d.%m.%Y")
+
+                if value not in found:
+                    found.append(value)
+            except ValueError:
+                pass
+
     return found
+
+
 
 def ocr_page(page):
     pix = page.get_pixmap(
