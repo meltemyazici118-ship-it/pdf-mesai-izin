@@ -5,6 +5,7 @@ from datetime import datetime
 
 import streamlit as st
 import pandas as pd
+import numpy as np
 import fitz
 from PIL import Image, ImageOps, ImageEnhance
 import pytesseract
@@ -18,7 +19,7 @@ st.set_page_config(
 )
 st.title("📄 PDF İzin–Mesai Kontrol")
 st.info(
-    "Ücretsiz sürüm. PDF metni ve OCR ile bilgileri okumayı dener. "
+    "Ücretsiz sürüm. El yazılı tarih satırlarını ayrı ayrı tespit etmeyi dener. "
     "El yazısı ve işaretli kutular mutlaka kontrol edilmelidir."
 )
 st.warning(
@@ -63,127 +64,51 @@ def dates_in(text):
 
 
 
-def ocr_dates_column(page):
-    rect = page.rect
-
-    # Fazla çalışma formundaki sol tarih sütunu
-    area = fitz.Rect(
-        rect.x0 + rect.width * 0.035,
-        rect.y0 + rect.height * 0.38,
-        rect.x0 + rect.width * 0.205,
-        rect.y0 + rect.height * 0.72
-    )
-
-    pix = page.get_pixmap(
-        matrix=fitz.Matrix(4, 4),
-        clip=area,
-        alpha=False
-    )
-
-    image = Image.open(
-        io.BytesIO(pix.tobytes("png"))
-    ).convert("RGB")
-
-    image = ImageEnhance.Contrast(
-        ImageOps.grayscale(image)
-    ).enhance(2.0)
-
-    results = []
-    for psm in (6, 11, 12):
-        try:
-            text = pytesseract.image_to_string(
-                image,
-                lang="tur+eng",
-                config=f"--psm {psm}"
-            )
-            results.extend(dates_in(text))
-        except pytesseract.TesseractError:
-            pass
-
-    return list(dict.fromkeys(results))
-
-def ocr_dates_column(page):
-    rect = page.rect
-
-    # Fazla çalışma formundaki sol tarih sütunu
-    area = fitz.Rect(
-        rect.x0 + rect.width * 0.035,
-        rect.y0 + rect.height * 0.38,
-        rect.x0 + rect.width * 0.205,
-        rect.y0 + rect.height * 0.72
-    )
-
-    pix = page.get_pixmap(
-        matrix=fitz.Matrix(4, 4),
-        clip=area,
-        alpha=False
-    )
-
-    image = Image.open(
-        io.BytesIO(pix.tobytes("png"))
-    ).convert("RGB")
-
-    image = ImageEnhance.Contrast(
-        ImageOps.grayscale(image)
-    ).enhance(2.0)
-
-    results = []
-    for psm in (6, 11, 12):
-        try:
-            text = pytesseract.image_to_string(
-                image,
-                lang="tur+eng",
-                config=f"--psm {psm}"
-            )
-            results.extend(dates_in(text))
-        except pytesseract.TesseractError:
-            pass
-
-    return list(dict.fromkeys(results))
+def handwritten_row_centers(image):
+    """Locate blue handwritten lines in the date column, without inventing dates."""
+    w, h = image.size
+    x1, x2 = int(w * .035), int(w * .205)
+    y1, y2 = int(h * .38), int(h * .73)
+    a = np.asarray(image.crop((x1, y1, x2, y2)).convert("RGB")).astype(np.int16)
+    r, g, b = a[:, :, 0], a[:, :, 1], a[:, :, 2]
+    mask = (b > r + 16) & (b > g + 5) & (b > 60) & (r < 205)
+    counts = mask.sum(axis=1).astype(float)
+    smooth = np.convolve(counts, np.ones(9) / 9, mode="same")
+    threshold = max(5.0, float(smooth.max()) * .16) if len(smooth) else 5.0
+    peaks = []
+    for i in range(1, len(smooth) - 1):
+        if smooth[i] >= threshold and smooth[i] >= smooth[i - 1] and smooth[i] > smooth[i + 1]:
+            peaks.append((smooth[i], i))
+    chosen = []
+    minimum_gap = int(h * .013)
+    for _, pos in sorted(peaks, reverse=True):
+        if all(abs(pos - previous) >= minimum_gap for previous in chosen):
+            chosen.append(pos)
+    return [y1 + pos for pos in sorted(chosen)]
 
 
-
-
-def ocr_dates_column(page):
-    rect = page.rect
-
-    # Fazla çalışma formundaki sol tarih sütunu
-    area = fitz.Rect(
-        rect.x0 + rect.width * 0.035,
-        rect.y0 + rect.height * 0.38,
-        rect.x0 + rect.width * 0.205,
-        rect.y0 + rect.height * 0.72
-    )
-
-    pix = page.get_pixmap(
-        matrix=fitz.Matrix(4, 4),
-        clip=area,
-        alpha=False
-    )
-
-    image = Image.open(
-        io.BytesIO(pix.tobytes("png"))
-    ).convert("RGB")
-
-    image = ImageEnhance.Contrast(
-        ImageOps.grayscale(image)
-    ).enhance(2.0)
-
-    results = []
-    for psm in (6, 11, 12):
-        try:
-            text = pytesseract.image_to_string(
-                image,
-                lang="tur+eng",
-                config=f"--psm {psm}"
-            )
-            results.extend(dates_in(text))
-        except pytesseract.TesseractError:
-            pass
-
-    return list(dict.fromkeys(results))
-
-
+def date_rows(page):
+    pix = page.get_pixmap(matrix=fitz.Matrix(3, 3), alpha=False)
+    image = Image.open(io.BytesIO(pix.tobytes("png"))).convert("RGB")
+    centers = handwritten_row_centers(image)
+    dates = []
+    for cy in centers:
+        h, w = image.height, image.width
+        pad = int(h * .011)
+        crop = image.crop((int(w * .035), max(0, int(cy) - pad),
+                           int(w * .205), min(h, int(cy) + pad)))
+        gray = ImageEnhance.Contrast(ImageOps.grayscale(crop)).enhance(2.2)
+        guesses = []
+        for picture in (crop, gray):
+            try:
+                guesses.extend(dates_in(pytesseract.image_to_string(
+                    picture, lang="tur+eng", config="--psm 7")))
+            except pytesseract.TesseractError:
+                guesses.extend(dates_in(pytesseract.image_to_string(
+                    picture, lang="eng", config="--psm 7")))
+        unique = list(dict.fromkeys(guesses))
+        dates.append(unique[0] if len(unique) == 1 else "")
+    return dates
 
 
 def ocr_page(page):
@@ -236,9 +161,11 @@ def parse_pdf(file):
         method = "PDF metni" if len(direct) >= 40 else "OCR"
         text = direct if method == "PDF metni" else ocr_page(page)
 
-        dates = dates_in(text)
-        column_dates = ocr_dates_column(page)
-        dates = list(dict.fromkeys(dates + column_dates))
+        # Each visible handwritten row gets its own editable record.
+        # Never use the PDF filename to fabricate missing dates.
+        dates = date_rows(page)
+        if not dates:
+            dates = dates_in(direct if len(direct) >= 40 else text)
         name = ""
         sicil = ""
 
@@ -345,7 +272,7 @@ if files:
 if st.session_state.rows:
     st.subheader("Sonuçları PDF'ye bakarak düzeltin")
     st.caption(
-        "Eksik tarihleri yeni satır ekleyerek girebilirsiniz. "
+        "Her el yazılı tarih satırı için ayrı kayıt açılır; okunamayanları kontrol edin. "
         "Saatler yanlış eşleştirmeyi önlemek için boş bırakılır."
     )
 
