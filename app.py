@@ -63,6 +63,129 @@ def dates_in(text):
 
 
 
+def ocr_dates_column(page):
+    rect = page.rect
+
+    # Fazla çalışma formundaki sol tarih sütunu
+    area = fitz.Rect(
+        rect.x0 + rect.width * 0.035,
+        rect.y0 + rect.height * 0.38,
+        rect.x0 + rect.width * 0.205,
+        rect.y0 + rect.height * 0.72
+    )
+
+    pix = page.get_pixmap(
+        matrix=fitz.Matrix(4, 4),
+        clip=area,
+        alpha=False
+    )
+
+    image = Image.open(
+        io.BytesIO(pix.tobytes("png"))
+    ).convert("RGB")
+
+    image = ImageEnhance.Contrast(
+        ImageOps.grayscale(image)
+    ).enhance(2.0)
+
+    results = []
+    for psm in (6, 11, 12):
+        try:
+            text = pytesseract.image_to_string(
+                image,
+                lang="tur+eng",
+                config=f"--psm {psm}"
+            )
+            results.extend(dates_in(text))
+        except pytesseract.TesseractError:
+            pass
+
+    return list(dict.fromkeys(results))
+
+def ocr_dates_column(page):
+    rect = page.rect
+
+    # Fazla çalışma formundaki sol tarih sütunu
+    area = fitz.Rect(
+        rect.x0 + rect.width * 0.035,
+        rect.y0 + rect.height * 0.38,
+        rect.x0 + rect.width * 0.205,
+        rect.y0 + rect.height * 0.72
+    )
+
+    pix = page.get_pixmap(
+        matrix=fitz.Matrix(4, 4),
+        clip=area,
+        alpha=False
+    )
+
+    image = Image.open(
+        io.BytesIO(pix.tobytes("png"))
+    ).convert("RGB")
+
+    image = ImageEnhance.Contrast(
+        ImageOps.grayscale(image)
+    ).enhance(2.0)
+
+    results = []
+    for psm in (6, 11, 12):
+        try:
+            text = pytesseract.image_to_string(
+                image,
+                lang="tur+eng",
+                config=f"--psm {psm}"
+            )
+            results.extend(dates_in(text))
+        except pytesseract.TesseractError:
+            pass
+
+    return list(dict.fromkeys(results))
+
+
+
+
+def ocr_dates_column(page):
+    rect = page.rect
+
+    # Fazla çalışma formundaki sol tarih sütunu
+    area = fitz.Rect(
+        rect.x0 + rect.width * 0.035,
+        rect.y0 + rect.height * 0.38,
+        rect.x0 + rect.width * 0.205,
+        rect.y0 + rect.height * 0.72
+    )
+
+    pix = page.get_pixmap(
+        matrix=fitz.Matrix(4, 4),
+        clip=area,
+        alpha=False
+    )
+
+    image = Image.open(
+        io.BytesIO(pix.tobytes("png"))
+    ).convert("RGB")
+
+    image = ImageEnhance.Contrast(
+        ImageOps.grayscale(image)
+    ).enhance(2.0)
+
+    results = []
+    for psm in (6, 11, 12):
+        try:
+            text = pytesseract.image_to_string(
+                image,
+                lang="tur+eng",
+                config=f"--psm {psm}"
+            )
+            results.extend(dates_in(text))
+        except pytesseract.TesseractError:
+            pass
+
+    return list(dict.fromkeys(results))
+
+
+
+
 def ocr_page(page):
     pix = page.get_pixmap(
         matrix=fitz.Matrix(2.5, 2.5),
@@ -114,6 +237,8 @@ def parse_pdf(file):
         text = direct if method == "PDF metni" else ocr_page(page)
 
         dates = dates_in(text)
+column_dates = ocr_dates_column(page)
+dates = list(dict.fromkeys(dates + column_dates))
         name = ""
         sicil = ""
 
